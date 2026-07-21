@@ -202,6 +202,20 @@ p { margin: 0; }
 .nav__links a:hover { color: var(--fg); }
 
 /* ─────────── HERO ─────────── */
+/* Hero backdrop: leads falling into a funnel and being filtered at each stage —
+   the thing this page sells, drawn instead of described. Deliberately faint;
+   the headline stays the first thing you read. */
+.hero__funnel {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  -webkit-mask-image: radial-gradient(115% 80% at 50% 45%, transparent 26%, #000 74%);
+  mask-image: radial-gradient(115% 80% at 50% 45%, transparent 26%, #000 74%);
+}
+.hero__funnel canvas { display: block; width: 100%; height: 100%; }
+.hero > .container { position: relative; z-index: 1; }
+
 .hero {
   position: relative;
   padding-top: clamp(16px, 3.5vh, 48px);

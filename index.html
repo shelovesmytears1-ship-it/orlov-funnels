@@ -51,6 +51,7 @@
 
 <!-- ───────── HERO ───────── -->
 <section class="hero">
+  <div class="hero__funnel" aria-hidden="true"><canvas id="orlovFunnel"></canvas></div>
   <div class="container hero__grid">
     <div class="hero__copy reveal">
       <span class="eyebrow">Продюсер автоворонок · з 2019 року</span>
@@ -717,6 +718,132 @@ window.addEventListener('scroll', () => {
   lastScroll = y;
 }, { passive: true });
 nav.style.transition = 'transform 0.35s cubic-bezier(0.4,0,0.2,1)';
+</script>
+
+<script>
+/* Hero backdrop — traffic falls in at the top, narrows through the funnel and
+   is filtered at each stage. Canvas so a few hundred particles cost one paint;
+   first frame is drawn synchronously, the loop pauses off-screen. */
+(function () {
+  const canvas = document.getElementById('orlovFunnel');
+  if (!canvas) return;
+  const host = canvas.parentElement;
+  const ctx = canvas.getContext('2d');
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const ACCENT = '217, 95, 43';
+  const STAGES = [0.18, 0.42, 0.66, 0.88];   // where the funnel steps in
+  const KEEP   = [0.72, 0.62, 0.55];         // share surviving each stage
+
+  let W = 0, H = 0, dots = [], raf = 0, onScreen = false, last = 0;
+
+  /** Funnel half-width at a given vertical progress. */
+  const halfAt = (p) => {
+    const wide = W * 0.34, narrow = W * 0.055;
+    let k = 0;
+    for (let i = 0; i < STAGES.length; i++) if (p > STAGES[i]) k = i + 1;
+    const eased = Math.pow(Math.min(p, 1), 0.72);
+    return Math.max(narrow, wide - (wide - narrow) * eased) * (1 - k * 0.04);
+  };
+
+  function spawn(seeded) {
+    return {
+      p: seeded ? Math.random() : -Math.random() * 0.08,
+      off: (Math.random() * 2 - 1),
+      v: 0.055 + Math.random() * 0.06,
+      r: 1.1 + Math.random() * 1.7,
+      a: 0.16 + Math.random() * 0.3,
+      dead: 0,
+      seed: Math.random(),
+    };
+  }
+
+  function build() {
+    W = host.clientWidth; H = host.clientHeight;
+    if (!W || !H) return;
+    const dpr = Math.min(devicePixelRatio || 1, 1.75);
+    canvas.width = Math.round(W * dpr);
+    canvas.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const n = Math.round(Math.min(240, Math.max(90, W / 6)));
+    dots = Array.from({ length: n }, () => spawn(true));
+  }
+
+  function draw(now) {
+    raf = 0;
+    const dt = Math.min(0.05, (now - last) / 1000) || 0.016;
+    last = now;
+    ctx.clearRect(0, 0, W, H);
+
+    // funnel walls
+    ctx.strokeStyle = 'rgba(' + ACCENT + ',0.16)';
+    ctx.lineWidth = 1;
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      for (let p = 0; p <= 1.001; p += 0.02) {
+        const x = W / 2 + side * halfAt(p), y = p * H;
+        p === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+    // stage rules
+    ctx.strokeStyle = 'rgba(' + ACCENT + ',0.10)';
+    for (const s of STAGES) {
+      const h = halfAt(s), y = Math.round(s * H) + 0.5;
+      ctx.beginPath(); ctx.moveTo(W / 2 - h, y); ctx.lineTo(W / 2 + h, y); ctx.stroke();
+    }
+
+    for (const d of dots) {
+      if (!reduce) d.p += d.v * dt;
+
+      if (d.p > 1.05) Object.assign(d, spawn(false));
+
+      // filtered out at a stage boundary
+      if (!d.dead) {
+        for (let i = 0; i < KEEP.length; i++) {
+          if (d.p > STAGES[i] && d.p - d.v * dt <= STAGES[i] && d.seed > KEEP[i]) {
+            d.dead = 1; d.driftDir = d.off >= 0 ? 1 : -1; break;
+          }
+        }
+      }
+
+      const p = Math.max(0, Math.min(1, d.p));
+      let x = W / 2 + d.off * halfAt(p) * 0.88;
+      let y = p * H;
+      let a = d.a;
+
+      if (d.dead) {
+        const gone = Math.min(1, (d.p - STAGES.find((s) => d.p > s) || 0) * 6);
+        x += d.driftDir * gone * W * 0.06;
+        a *= Math.max(0, 1 - gone * 1.4);
+      } else if (p < 0.06) {
+        a *= p / 0.06;                       // fade in at the mouth
+      }
+
+      if (a <= 0.004) continue;
+      ctx.fillStyle = 'rgba(' + ACCENT + ',' + a.toFixed(3) + ')';
+      ctx.beginPath();
+      ctx.arc(x, y, d.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    if (!reduce && onScreen && !document.hidden) tick();
+  }
+
+  const tick = () => { if (!raf) raf = requestAnimationFrame(draw); };
+
+  build();
+  last = performance.now();
+  draw(last);
+  new ResizeObserver(() => { build(); last = performance.now(); draw(last); }).observe(host);
+  new IntersectionObserver((es) => {
+    onScreen = es[0].isIntersecting;
+    if (onScreen) { last = performance.now(); tick(); }
+  }, { threshold: 0.01 }).observe(host);
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && onScreen) { last = performance.now(); tick(); }
+  });
+})();
 </script>
 </body>
 </html>
